@@ -1,64 +1,118 @@
 package main
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
-// albun Estructura de albun
-type album struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Artist string `json:"artist"`
-	Year   int    `json:"year"`
-}
-
-// Lista de albuns
-var albums = []album{
-	{ID: "1", Title: "Familia", Artist: "Camila Cabello", Year: 2022},
-	{ID: "2", Title: "21", Artist: "Adele", Year: 2011},
-	{ID: "3", Title: "The Eminem Show", Artist: "Eminem", Year: 2002},
-	{ID: "4", Title: "Meteora", Artist: "Linkin Park", Year: 2003},
-	{ID: "5", Title: "25", Artist: "Adele", Year: 2015},
-}
-
-// Obtener lista de albums
-func getAlbums(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, albums)
-}
-
-// Agregar un albums
-func postAlbums(c *gin.Context) {
-	var newAlbum album
-
-	if err := c.BindJSON(&newAlbum); err != nil {
-		return
-	}
-
-	albums = append(albums, newAlbum)
-	c.IndentedJSON(http.StatusCreated, newAlbum)
-}
-
-// Obtener po id un albuns
-func getAlbumByID(c *gin.Context) {
-	id := c.Param("id")
-
-	for _, a := range albums {
-		if a.ID == id {
-			c.IndentedJSON(http.StatusOK, a)
-			return
-		}
-	}
-
-	c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Albun no encontrado"})
+type Usuario struct {
+	gorm.Model
+	Nombre string
+	Email  string
 }
 
 func main() {
-	router := gin.Default()
-	router.GET("/albums", getAlbums)
-	router.POST("/albums", postAlbums)
-	router.GET("/albums/:id", getAlbumByID)
+	r := gin.Default()
 
-	router.Run("localhost:8080")
+	// Configuración de la base de datos
+	dsn := "root:@tcp(127.0.0.1:3306)/crud_app?charset=utf8mb4&parseTime=True&loc=Local"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic("Error al conectar a la base de datos")
+	}
+	db.AutoMigrate(&Usuario{})
+
+	// Rutas para las operaciones CRUD
+	r.GET("/users", ObtenerUsuarios(db))
+	r.GET("/users/:id", ObtenerUsuario(db))
+	r.POST("/users", CrearUsuario(db))
+	r.PUT("/users/:id", ActtualizarUsuario(db))
+	r.DELETE("/users/:id", BorrarUsuario(db))
+
+	r.Run(":8080")
+}
+
+func InfoMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"nombre":    "Daniel Flores",
+			"matricula": "200614",
+			"grupo":     "IDGS 10-B",
+		})
+	}
+}
+
+func ErrorMiddleware(c *gin.Context, err error) {
+	c.JSON(400, gin.H{"error": err.Error()})
+}
+
+// Manejadores para las rutas CRUD
+func ObtenerUsuarios(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var users []Usuario
+		db.Find(&users)
+		c.JSON(200, gin.H{
+			"data": users,
+		})
+	}
+}
+
+func ObtenerUsuario(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var user Usuario
+		if err := db.Where("id = ?", c.Param("id")).First(&user).Error; err != nil {
+			ErrorMiddleware(c, err)
+			return
+		}
+		c.JSON(200, gin.H{
+			"data": user,
+		})
+	}
+}
+
+func CrearUsuario(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var user Usuario
+		if err := c.ShouldBindJSON(&user); err != nil {
+			ErrorMiddleware(c, err)
+			return
+		}
+		db.Create(&user)
+		c.JSON(200, gin.H{
+			"data": user,
+		})
+	}
+}
+
+func ActtualizarUsuario(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var user Usuario
+		if err := db.Where("id = ?", c.Param("id")).First(&user).Error; err != nil {
+			ErrorMiddleware(c, err)
+			return
+		}
+		if err := c.ShouldBindJSON(&user); err != nil {
+			ErrorMiddleware(c, err)
+			return
+		}
+		db.Save(&user)
+		c.JSON(200, gin.H{
+			"data": user,
+		})
+	}
+}
+
+func BorrarUsuario(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var user Usuario
+		if err := db.Where("id = ?", c.Param("id")).First(&user).Error; err != nil {
+			ErrorMiddleware(c, err)
+			return
+		}
+		db.Delete(&user)
+		c.JSON(200, gin.H{
+			"message": "Usuario eliminado!",
+		})
+	}
 }
